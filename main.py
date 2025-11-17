@@ -1,67 +1,65 @@
 import os
 import requests
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from flask import Flask, request
+from telegram import Bot, Update
+from telegram.ext import Dispatcher, CommandHandler, MessageHandler, filters
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_URL = "https://api.itsvg.in/meta?url="
 
-WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL")  # auto webhook
+bot = Bot(BOT_TOKEN)
+app = Flask(__name__)
+
+dispatcher = Dispatcher(bot, None, workers=0)
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Send link to download 🔥")
+def start(update, context):
+    update.message.reply_text("Send any link to download 🔥")
 
 
-async def downloader(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def downloader(update, context):
     url = update.message.text.strip()
 
     if not url.startswith("http"):
-        await update.message.reply_text("❌ Valid link do.")
+        update.message.reply_text("❌ Valid link do.")
         return
 
-    await update.message.reply_text("⏳ Downloading...")
+    update.message.reply_text("⏳ Downloading...")
 
     try:
         r = requests.get(API_URL + url)
         data = r.json()
 
         if "url" not in data or len(data["url"]) == 0:
-            await update.message.reply_text("❌ Media nahi mila.")
+            update.message.reply_text("❌ Media nahi mila.")
             return
 
         media_url = data["url"][0]["url"]
 
         if media_url.endswith(".mp4"):
-            await update.message.reply_video(media_url)
+            bot.send_video(chat_id=update.effective_chat.id, video=media_url)
         else:
-            await update.message.reply_photo(media_url)
+            bot.send_photo(chat_id=update.effective_chat.id, photo=media_url)
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Error: {e}")
+        update.message.reply_text(f"❌ Error: {e}")
 
 
-async def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+dispatcher.add_handler(CommandHandler("start", start))
+dispatcher.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, downloader))
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, downloader))
 
-    # Webhook mode — NO UPDATER — NO ERROR EVER
-    await app.initialize()
-    await app.start()
-    await app.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
-    await app.updater.start_webhook(
-        listen="0.0.0.0",
-        port=10000,
-        url_path="webhook",
-    )
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.json, bot)
+    dispatcher.process_update(update)
+    return "ok", 200
 
-    print("🚀 Webhook bot running on Render...")
 
-    await app.updater.idle()
+@app.route("/")
+def home():
+    return "Bot is running!", 200
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    app.run(host="0.0.0.0", port=10000)
