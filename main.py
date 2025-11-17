@@ -6,28 +6,28 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_URL = "https://api.itsvg.in/meta?url="
 
+WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL")  # auto webhook
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎵 Send link (YT, Insta, Reels, Shorts, TikTok)\nI will download it for you🔥"
-    )
+    await update.message.reply_text("Send link to download 🔥")
 
 
 async def downloader(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
 
     if not url.startswith("http"):
-        await update.message.reply_text("❌ Send a valid link.")
+        await update.message.reply_text("❌ Valid link do.")
         return
 
     await update.message.reply_text("⏳ Downloading...")
 
     try:
-        r = requests.get(API_URL + url, timeout=15)
+        r = requests.get(API_URL + url)
         data = r.json()
 
         if "url" not in data or len(data["url"]) == 0:
-            await update.message.reply_text("❌ No media found.")
+            await update.message.reply_text("❌ Media nahi mila.")
             return
 
         media_url = data["url"][0]["url"]
@@ -41,19 +41,27 @@ async def downloader(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error: {e}")
 
 
-def main():
-    if not BOT_TOKEN:
-        print("❌ BOT_TOKEN missing in Render environment!")
-        return
-
+async def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, downloader))
 
-    print("🚀 Bot is running on Render…")
-    app.run_polling()
+    # Webhook mode — NO UPDATER — NO ERROR EVER
+    await app.initialize()
+    await app.start()
+    await app.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
+    await app.updater.start_webhook(
+        listen="0.0.0.0",
+        port=10000,
+        url_path="webhook",
+    )
+
+    print("🚀 Webhook bot running on Render...")
+
+    await app.updater.idle()
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
